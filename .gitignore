@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.port_sessions/
+.env
+*.egg-info/
+dist/
+build/
+.tox/
+.venv/
+config.json
+docs/node_modules/
+docs/build/
+docs/.docusaurus/

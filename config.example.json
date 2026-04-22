@@ -1,0 +1,10 @@
+{
+  "azure_endpoint": "",
+  "azure_deployment": "gpt-4o",
+  "azure_api_version": "2025-01-01-preview",
+  "permission_mode": "workspace_write",
+  "max_iterations": 10,
+  "show_system_prompt": false,
+  "show_tool_calls": true,
+  "mcp_server": "mcp_server"
+}
