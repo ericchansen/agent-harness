@@ -32,6 +32,13 @@ pip install -e .
 cp config.example.json config.json
 ```
 
+Or rehearse without Azure:
+
+```bash
+python -m agent_harness --mock --preflight
+python -m agent_harness --mock --prompt "What files are in the current directory?"
+```
+
 Set your Azure AI Services endpoint in `config.json`:
 
 ```json
@@ -55,7 +62,17 @@ az deployment sub create \
 ## Running the Demo
 
 ```bash
+# Validate the setup
+python -m agent_harness --preflight
+
+# Interactive REPL
 python -m agent_harness
+
+# One-shot prompt
+python -m agent_harness --prompt "What files are in the current directory?"
+
+# Deterministic rehearsal mode
+python -m agent_harness --mock --prompt "What files are in the current directory?"
 ```
 
 Edit files in VS Code while the agent runs — changes apply on the next prompt:
@@ -65,6 +82,8 @@ Edit files in VS Code while the agent runs — changes apply on the next prompt:
 | `config.json` | Model, permission mode, MCP server, verbosity |
 | `tools.json` | Tool definitions (name, description, schema, permission) |
 | `skills/*.md` | Drop-in prompt modules appended to the system prompt |
+
+The current working directory is the workspace root. In `read_only` and `workspace_write`, file tools stay inside it.
 
 ## Demo Playbook
 
@@ -141,6 +160,8 @@ you> Write hello to test.txt
 ```
 
 **Teaching point**: The model still _tries_ to use the tool. The permission system stops execution after the model decides.
+
+In `workspace_write`, file tools can modify files inside the current workspace but not outside it. Use `dangerous` only when you intentionally want to remove that boundary.
 
 ## Architecture
 

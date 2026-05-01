@@ -17,6 +17,8 @@ PERMISSION_LEVELS: dict[str, int] = {
     "dangerous": 2,
 }
 
+PATH_ARGUMENT_TOOLS = {"read_file", "list_files", "write_file"}
+
 
 def load_tools(path: str = "tools.json") -> list[ToolSpec]:
     """Read tool definitions from a JSON file."""
@@ -32,7 +34,33 @@ def load_tools(path: str = "tools.json") -> list[ToolSpec]:
     ]
 
 
-def check_permission(tool: ToolSpec, config: Config) -> str | None:
+def _workspace_root() -> Path:
+    """Return the current workspace root."""
+    return Path.cwd().resolve()
+
+
+def _resolve_workspace_path(path: str) -> Path:
+    """Resolve a tool path relative to the current workspace."""
+    candidate = Path(path or ".")
+    if not candidate.is_absolute():
+        candidate = _workspace_root() / candidate
+    return candidate.resolve()
+
+
+def _is_within_workspace(path: Path) -> bool:
+    """Return whether a path stays within the current workspace root."""
+    try:
+        path.relative_to(_workspace_root())
+        return True
+    except ValueError:
+        return False
+
+
+def check_permission(
+    tool: ToolSpec,
+    config: Config,
+    arguments: dict[str, Any] | None = None,
+) -> str | None:
     """Return an error string if the tool is denied, otherwise ``None``."""
     required = PERMISSION_LEVELS.get(tool.permission, 0)
     current = PERMISSION_LEVELS.get(config.permission_mode, 1)
@@ -41,6 +69,19 @@ def check_permission(tool: ToolSpec, config: Config) -> str | None:
             f"Permission denied: '{tool.name}' requires "
             f"'{tool.permission}', current mode is '{config.permission_mode}'"
         )
+
+    if (
+        config.permission_mode != "dangerous"
+        and tool.name in PATH_ARGUMENT_TOOLS
+        and arguments is not None
+    ):
+        path = _resolve_workspace_path(str(arguments.get("path", ".")))
+        if not _is_within_workspace(path):
+            return (
+                f"Permission denied: '{tool.name}' cannot access '{path}' "
+                f"outside workspace '{_workspace_root()}'"
+            )
+
     return None
 
 
@@ -62,7 +103,10 @@ def _handle_read_file(args: dict[str, Any]) -> str:
     path = args.get("path", "")
     if not os.path.isfile(path):
         return f"Error: file not found: {path}"
-    text = Path(path).read_text(encoding="utf-8", errors="replace")
+    try:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        return f"Error: could not read {path}: {exc}"
     if len(text) > 10_000:
         return text[:10_000] + "\n...(truncated)"
     return text
@@ -71,7 +115,10 @@ def _handle_read_file(args: dict[str, Any]) -> str:
 def _handle_list_files(args: dict[str, Any]) -> str:
     """List directory entries, one per line."""
     path = args.get("path", ".")
-    entries = sorted(os.listdir(path))
+    try:
+        entries = sorted(os.listdir(path))
+    except OSError as exc:
+        return f"Error: could not list {path}: {exc}"
     return "\n".join(entries[:100])
 
 
@@ -96,8 +143,11 @@ def _handle_write_file(args: dict[str, Any]) -> str:
     """Write content to a file, creating parent directories as needed."""
     path = args.get("path", "")
     content = args.get("content", "")
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    Path(path).write_text(content, encoding="utf-8")
+    try:
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        Path(path).write_text(content, encoding="utf-8")
+    except OSError as exc:
+        return f"Error: could not write {path}: {exc}"
     return f"Wrote {len(content)} bytes to {path}"
 
 

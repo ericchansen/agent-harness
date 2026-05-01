@@ -21,6 +21,13 @@ pip install -e .
 cp config.example.json config.json
 ```
 
+Or rehearse locally without Azure:
+
+```bash
+python -m agent_harness --mock --preflight
+python -m agent_harness --mock --prompt "What files are in the current directory?"
+```
+
 Edit `config.json` and set `azure_endpoint` to your Azure AI Services endpoint:
 
 ```json
@@ -53,7 +60,17 @@ This creates an AI Services resource with a `gpt-4o` deployment and grants you d
 ## Usage
 
 ```bash
+# Validate the current setup
+python -m agent_harness --preflight
+
+# Interactive REPL
 python -m agent_harness
+
+# One-shot prompt
+python -m agent_harness --prompt "What files are in the current directory?"
+
+# Deterministic rehearsal mode (no Azure call)
+python -m agent_harness --mock --prompt "What files are in the current directory?"
 ```
 
 Edit files in VS Code while the agent runs — changes apply on the next prompt:
@@ -63,6 +80,8 @@ Edit files in VS Code while the agent runs — changes apply on the next prompt:
 | `config.json` | Model, permission mode, MCP server, verbosity |
 | `tools.json` | Tool definitions (name, description, schema, permission) |
 | `skills/*.md` | Drop-in prompt modules appended to system prompt |
+
+The current working directory is the workspace root. In `read_only` and `workspace_write`, file tools stay inside it.
 
 ## Demo Playbook
 
@@ -125,6 +144,8 @@ you> Write hello to test.txt
   🔧 write_file({"path": "test.txt", "content": "hello"})
   🚫 Permission denied: 'write_file' requires 'workspace_write'
 ```
+
+In `workspace_write`, file tools can modify files inside the current workspace but not outside it. Use `dangerous` only when you intentionally want to remove that boundary.
 
 ## Architecture
 
