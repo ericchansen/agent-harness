@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 
-from agent_harness.agent import agent_turn, load_config
+import agent_harness.agent as agent_module
+from agent_harness.agent import agent_turn, load_config, run_preflight
 from agent_harness.models import Config
 
 
@@ -71,3 +72,68 @@ def test_agent_turn_mock_mode_roundtrips_tool_call(tmp_path, monkeypatch) -> Non
     assert any(message["role"] == "tool" for message in messages)
     assert messages[-1]["role"] == "assistant"
     assert "demo.txt" in messages[-1]["content"]
+
+
+def test_agent_turn_mock_mode_write_handles_mixed_case_to(
+    tmp_path, monkeypatch
+) -> None:
+    """Mock mode should parse write prompts case-insensitively."""
+    (tmp_path / "tools.json").write_text(
+        json.dumps(
+            [
+                {
+                    "name": "write_file",
+                    "description": "Write a file.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "path": {"type": "string"},
+                            "content": {"type": "string"},
+                        },
+                    },
+                    "permission": "workspace_write",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    config = Config(
+        azure_endpoint="",
+        azure_deployment="gpt-4o",
+        azure_api_version="2025-01-01-preview",
+        permission_mode="workspace_write",
+    )
+
+    messages = agent_turn(
+        "Write hello TO test.txt",
+        [],
+        None,
+        config,
+        use_mock=True,
+    )
+
+    assert any(message["role"] == "tool" for message in messages)
+    assert (tmp_path / "test.txt").read_text(encoding="utf-8") == "hello"
+
+
+def test_run_preflight_says_connectivity_not_verified(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    """Azure preflight wording should not overclaim live validation."""
+    (tmp_path / "tools.json").write_text("[]", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(agent_module, "make_client", lambda config: object())
+
+    config = Config(
+        azure_endpoint="https://example.test/",
+        azure_deployment="gpt-4o",
+        azure_api_version="2025-01-01-preview",
+        permission_mode="workspace_write",
+    )
+
+    run_preflight(config, use_mock=False)
+
+    out = capsys.readouterr().out
+    assert "connectivity not verified" in out
