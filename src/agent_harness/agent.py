@@ -180,7 +180,10 @@ def _mock_response(
         )
 
     if lower.startswith("write ") and " to " in lower and "write_file" in available:
-        content, path = user_text[6:].rsplit(" to ", 1)
+        payload = user_text[6:].strip()
+        split_at = lower[6:].rfind(" to ")
+        content = payload[:split_at].strip()
+        path = payload[split_at + 4 :].strip()
         return _MockResponse(
             _MockMessage(
                 tool_calls=[
@@ -199,7 +202,7 @@ def _mock_response(
 
 
 def run_preflight(config: Config, use_mock: bool) -> None:
-    """Print a simple environment report before a demo run."""
+    """Print a simple local setup report before a demo run."""
     tools = load_tools()
     skills = load_skills()
 
@@ -214,7 +217,10 @@ def run_preflight(config: Config, use_mock: bool) -> None:
         print("   ✅ mock mode does not require Azure connectivity")
     else:
         make_client(config)
-        print(f"   ✅ Azure client configured for {config.azure_deployment}")
+        print(
+            "   ✅ Azure client settings loaded"
+            f" for {config.azure_deployment} (connectivity not verified)"
+        )
 
     if config.mcp_server:
         with McpSession(config.mcp_server) as mcp:

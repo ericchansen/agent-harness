@@ -62,7 +62,7 @@ az deployment sub create \
 ## Running the Demo
 
 ```bash
-# Validate the setup
+# Show the current local setup
 python -m agent_harness --preflight
 
 # Interactive REPL
@@ -74,6 +74,8 @@ python -m agent_harness --prompt "What files are in the current directory?"
 # Deterministic rehearsal mode
 python -m agent_harness --mock --prompt "What files are in the current directory?"
 ```
+
+`--preflight` checks local config, tool loading, skills, and MCP availability. It does **not** verify live Azure connectivity or deployment health.
 
 Edit files in VS Code while the agent runs — changes apply on the next prompt:
 
