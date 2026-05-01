@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sys
@@ -14,11 +15,80 @@ from openai import AzureOpenAI
 from agent_harness.api import call_model, make_client
 from agent_harness.mcp_client import McpSession
 from agent_harness.models import Config, ToolSpec
-from agent_harness.prompt import build_system_prompt
+from agent_harness.prompt import build_system_prompt, load_skills
 from agent_harness.tools import check_permission, execute_tool, load_tools
 
 
-def load_config(path: str = "config.json") -> Config:
+class _MockUsage:
+    """Tiny usage payload so mock mode looks like the real loop."""
+
+    prompt_tokens = 0
+    completion_tokens = 0
+
+
+class _MockFunction:
+    """OpenAI-style function call payload."""
+
+    def __init__(self, name: str, arguments: dict[str, Any]) -> None:
+        self.name = name
+        self.arguments = json.dumps(arguments)
+
+
+class _MockToolCall:
+    """OpenAI-style tool call payload."""
+
+    def __init__(self, name: str, arguments: dict[str, Any]) -> None:
+        self.id = f"mock-{name}"
+        self.function = _MockFunction(name, arguments)
+
+
+class _MockMessage:
+    """OpenAI-style assistant message payload."""
+
+    def __init__(
+        self,
+        content: str | None = None,
+        tool_calls: list[_MockToolCall] | None = None,
+    ) -> None:
+        self.role = "assistant"
+        self.content = content
+        self.tool_calls = tool_calls
+
+    def model_dump(self, exclude_none: bool = True) -> dict[str, Any]:
+        data: dict[str, Any] = {"role": self.role, "content": self.content}
+        if self.tool_calls:
+            data["tool_calls"] = [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {
+                        "name": tc.function.name,
+                        "arguments": tc.function.arguments,
+                    },
+                }
+                for tc in self.tool_calls
+            ]
+        if exclude_none:
+            data = {k: v for k, v in data.items() if v is not None}
+        return data
+
+
+class _MockChoice:
+    """OpenAI-style choice payload."""
+
+    def __init__(self, message: _MockMessage) -> None:
+        self.message = message
+
+
+class _MockResponse:
+    """OpenAI-style response payload."""
+
+    def __init__(self, message: _MockMessage) -> None:
+        self.choices = [_MockChoice(message)]
+        self.usage = _MockUsage()
+
+
+def load_config(path: str = "config.json", require_endpoint: bool = True) -> Config:
     """Load config from JSON file, with env var overrides.
 
     Falls back to ``config.example.json`` if ``config.json`` doesn't exist.
@@ -43,7 +113,7 @@ def load_config(path: str = "config.json") -> Config:
     if deployment := os.environ.get("AZURE_DEPLOYMENT"):
         raw["azure_deployment"] = deployment
 
-    if not raw.get("azure_endpoint"):
+    if require_endpoint and not raw.get("azure_endpoint"):
         sys.exit(
             "❌ azure_endpoint is empty. Either:\n"
             "   1. Set it in config.json\n"
@@ -53,6 +123,105 @@ def load_config(path: str = "config.json") -> Config:
         )
 
     return Config(**{k: v for k, v in raw.items() if k in Config.__dataclass_fields__})
+
+
+def _client_signature(config: Config) -> tuple[str, str, str]:
+    """Return the config fields that require a new Azure client."""
+    return (
+        config.azure_endpoint,
+        config.azure_deployment,
+        config.azure_api_version,
+    )
+
+
+def _mock_response(
+    messages: list[dict[str, Any]],
+    tools: list[ToolSpec],
+) -> _MockResponse:
+    """Return a deterministic, tiny mock response for rehearsals and tests."""
+    last = messages[-1]
+    available = {tool.name for tool in tools}
+
+    if last["role"] == "tool":
+        content = str(last["content"]).strip() or "(no output)"
+        return _MockResponse(_MockMessage(f"Mock mode result:\n{content}"))
+
+    user_text = str(last["content"]).strip()
+    lower = user_text.lower()
+
+    if (
+        any(
+            phrase in lower
+            for phrase in ("what files", "list files", "current directory")
+        )
+        and "list_files" in available
+    ):
+        return _MockResponse(
+            _MockMessage(tool_calls=[_MockToolCall("list_files", {"path": "."})])
+        )
+
+    if "what time" in lower and "mcp__get_current_time" in available:
+        return _MockResponse(
+            _MockMessage(tool_calls=[_MockToolCall("mcp__get_current_time", {})])
+        )
+
+    if lower.startswith("run ") and "run_command" in available:
+        command = user_text[4:].strip()
+        return _MockResponse(
+            _MockMessage(
+                tool_calls=[_MockToolCall("run_command", {"command": command})]
+            )
+        )
+
+    if lower.startswith("read ") and "read_file" in available:
+        path = user_text[5:].strip()
+        return _MockResponse(
+            _MockMessage(tool_calls=[_MockToolCall("read_file", {"path": path})])
+        )
+
+    if lower.startswith("write ") and " to " in lower and "write_file" in available:
+        content, path = user_text[6:].rsplit(" to ", 1)
+        return _MockResponse(
+            _MockMessage(
+                tool_calls=[
+                    _MockToolCall(
+                        "write_file",
+                        {"path": path.strip(), "content": content.strip()},
+                    )
+                ]
+            )
+        )
+
+    if lower == "what is 2 + 2?":
+        return _MockResponse(_MockMessage("4"))
+
+    return _MockResponse(_MockMessage("Mock mode: no tool call needed."))
+
+
+def run_preflight(config: Config, use_mock: bool) -> None:
+    """Print a simple environment report before a demo run."""
+    tools = load_tools()
+    skills = load_skills()
+
+    print("🔎 Preflight")
+    print(f"   cwd: {Path.cwd()}")
+    print(f"   provider: {'mock' if use_mock else 'azure'}")
+    print(f"   tools: {len(tools)} built-in")
+    print(f"   skills: {len(skills)} loaded")
+    print(f"   permission_mode: {config.permission_mode}")
+
+    if use_mock:
+        print("   ✅ mock mode does not require Azure connectivity")
+    else:
+        make_client(config)
+        print(f"   ✅ Azure client configured for {config.azure_deployment}")
+
+    if config.mcp_server:
+        with McpSession(config.mcp_server) as mcp:
+            mcp_tools = mcp.list_tools()
+            print(
+                f"   ✅ MCP server '{config.mcp_server}' exposed {len(mcp_tools)} tools"
+            )
 
 
 def _execute_single_tool(
@@ -66,7 +235,7 @@ def _execute_single_tool(
     if tool is None:
         return f"Error: unknown tool '{name}'"
 
-    denied = check_permission(tool, config)
+    denied = check_permission(tool, config, args)
     if denied:
         print(f"  🚫 {denied}")
         return denied
@@ -86,8 +255,9 @@ def _execute_single_tool(
 def agent_turn(
     user_message: str,
     messages: list[dict[str, Any]],
-    client: AzureOpenAI,
+    client: AzureOpenAI | None,
     config: Config,
+    use_mock: bool = False,
 ) -> list[dict[str, Any]]:
     """Run one full agent turn — may loop through multiple tool calls."""
     tools = load_tools()
@@ -108,7 +278,12 @@ def agent_turn(
         messages.append({"role": "user", "content": user_message})
 
         for _ in range(config.max_iterations):
-            response = call_model(client, messages, tools, system_prompt, config)
+            if use_mock:
+                response = _mock_response(messages, tools)
+            else:
+                if client is None:
+                    raise RuntimeError("Azure client is not initialized")
+                response = call_model(client, messages, tools, system_prompt, config)
             choice = response.choices[0]
 
             messages.append(choice.message.model_dump(exclude_none=True))
@@ -143,17 +318,60 @@ def agent_turn(
     return messages
 
 
-def main() -> None:
-    """Interactive REPL entry point."""
+def main(argv: list[str] | None = None) -> int:
+    """CLI entry point."""
+    parser = argparse.ArgumentParser(
+        description="Minimal AI agent harness for live demos"
+    )
+    parser.add_argument(
+        "--prompt",
+        help="Run one prompt and exit instead of starting the REPL.",
+    )
+    parser.add_argument(
+        "--preflight",
+        action="store_true",
+        help="Validate demo prerequisites and print the current setup.",
+    )
+    parser.add_argument(
+        "--mock",
+        action="store_true",
+        help="Use deterministic mock responses instead of calling Azure OpenAI.",
+    )
+    args = parser.parse_args(argv)
+
     messages: list[dict[str, Any]] = []
-    config = load_config()
-    client = make_client(config)
+    client: AzureOpenAI | None = None
+    client_signature: tuple[str, str, str] | None = None
+
+    config = load_config(require_endpoint=not args.mock)
+
+    if args.preflight:
+        try:
+            run_preflight(config, use_mock=args.mock)
+        except Exception as exc:  # noqa: BLE001
+            print(f"❌ Preflight failed: {exc}")
+            return 1
+        return 0
+
+    if not args.mock:
+        client = make_client(config)
+        client_signature = _client_signature(config)
+
+    if args.prompt:
+        try:
+            agent_turn(args.prompt, messages, client, config, use_mock=args.mock)
+        except Exception as exc:  # noqa: BLE001
+            print(f"❌ Error: {exc}")
+            return 1
+        return 0
 
     print("🤖 Agent Harness Demo")
     print(
         "   Edit config.json, tools.json, skills/"
         " in VS Code — changes apply on next prompt."
     )
+    if args.mock:
+        print("   Running in mock mode — deterministic responses, no Azure required.")
     print("   Type 'quit' to exit, 'reset' to clear conversation.\n")
 
     while True:
@@ -170,9 +388,18 @@ def main() -> None:
             print("  🧹 Conversation cleared.\n")
             continue
 
-        config = load_config()  # reload each turn for live editing
+        config = load_config(require_endpoint=not args.mock)
+        if not args.mock:
+            new_signature = _client_signature(config)
+            if client is None or new_signature != client_signature:
+                client = make_client(config)
+                client_signature = new_signature
         try:
-            messages = agent_turn(user_input, messages, client, config)
+            messages = agent_turn(
+                user_input, messages, client, config, use_mock=args.mock
+            )
         except Exception as exc:  # noqa: BLE001
             print(f"  ❌ Error: {exc}")
         print()
+
+    return 0
