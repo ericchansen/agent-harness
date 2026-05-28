@@ -17,8 +17,12 @@ Minimal AI agent harness for live demos. Shows how tools like Claude Code and Gi
 # Prerequisites: Python 3.11+, uv, Azure CLI logged in (az login)
 uv sync --dev
 
-# Copy the example config and set your endpoint
+# Copy the example config
 cp config.example.json config.json
+
+# Set your Azure endpoint in a .env file (gitignored, never read by the agent)
+cp .env.example .env
+# Edit .env and set AZURE_ENDPOINT
 ```
 
 Or rehearse locally without Azure:
@@ -28,17 +32,13 @@ uv run python -m agent_harness --mock --preflight
 uv run python -m agent_harness --mock --prompt "What files are in the current directory?"
 ```
 
-Edit `config.json` and set `azure_endpoint` to your Azure AI Services endpoint:
-
-```json
-{
-  "azure_endpoint": "https://your-resource.cognitiveservices.azure.com/"
-}
-```
-
-Or use an env var instead:
+Set `AZURE_ENDPOINT` to your Azure AI Services endpoint — either in `.env` or exported in your shell:
 
 ```bash
+# .env file (recommended)
+AZURE_ENDPOINT=https://your-resource.cognitiveservices.azure.com/
+
+# or export directly
 export AZURE_ENDPOINT=https://your-resource.cognitiveservices.azure.com/
 ```
 

@@ -24,11 +24,10 @@ def _mock_provider():
 
 
 def test_load_config_uses_example_and_env_override(tmp_path, monkeypatch) -> None:
-    """Config falls back to config.example.json and honors env overrides."""
+    """Config falls back to config.example.json; endpoint comes from env."""
     (tmp_path / "config.example.json").write_text(
         json.dumps(
             {
-                "azure_endpoint": "https://from-file.example/",
                 "azure_deployment": "gpt-4o",
                 "azure_api_version": "2025-01-01-preview",
                 "permission_mode": "workspace_write",

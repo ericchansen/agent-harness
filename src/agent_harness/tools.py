@@ -19,6 +19,23 @@ PERMISSION_LEVELS: dict[str, int] = {
 
 PATH_ARGUMENT_TOOLS = {"read_file", "list_files", "write_file"}
 
+# Files the agent must never read (contain secrets / credentials).
+SENSITIVE_READ_FILES: frozenset[str] = frozenset({".env"})
+
+# Files the agent must never write (integrity-critical).
+SENSITIVE_WRITE_FILES: frozenset[str] = frozenset(
+    {
+        "config.json",
+        "config.example.json",
+        ".env",
+        ".env.example",
+        "tools.json",
+    }
+)
+
+# Top-level directories whose contents the agent must never write.
+SENSITIVE_WRITE_DIRS: frozenset[str] = frozenset({"skills"})
+
 
 def load_tools(path: str = "tools.json") -> list[ToolSpec]:
     """Read tool definitions from a JSON file."""
@@ -56,6 +73,45 @@ def _is_within_workspace(path: Path) -> bool:
         return False
 
 
+def _check_sensitive_path(tool_name: str, path: Path) -> str | None:
+    """Return an error string if *path* is a protected file, else ``None``.
+
+    Sensitive-file protection is enforced regardless of permission mode
+    because it guards the harness's own configuration integrity.
+    """
+    root = _workspace_root()
+    try:
+        rel = path.relative_to(root)
+    except ValueError:
+        return None  # outside workspace — handled by the boundary check
+
+    # Normalise to forward-slash, case-folded form for comparison.
+    rel_str = str(rel).replace("\\", "/").casefold()
+
+    if tool_name == "read_file" and rel_str in {
+        f.casefold() for f in SENSITIVE_READ_FILES
+    }:
+        return (
+            f"Permission denied: '{tool_name}' cannot read " f"sensitive file '{rel}'"
+        )
+
+    if tool_name == "write_file":
+        if rel_str in {f.casefold() for f in SENSITIVE_WRITE_FILES}:
+            return (
+                f"Permission denied: '{tool_name}' cannot write "
+                f"sensitive file '{rel}'"
+            )
+        for dir_name in SENSITIVE_WRITE_DIRS:
+            prefix = dir_name.casefold() + "/"
+            if rel_str.startswith(prefix) or rel_str == dir_name.casefold():
+                return (
+                    f"Permission denied: '{tool_name}' cannot write "
+                    f"to protected directory '{dir_name}/'"
+                )
+
+    return None
+
+
 def check_permission(
     tool: ToolSpec,
     config: Config,
@@ -70,13 +126,16 @@ def check_permission(
             f"'{tool.permission}', current mode is '{config.permission_mode}'"
         )
 
-    if (
-        config.permission_mode != "dangerous"
-        and tool.name in PATH_ARGUMENT_TOOLS
-        and arguments is not None
-    ):
+    if tool.name in PATH_ARGUMENT_TOOLS and arguments is not None:
         path = _resolve_workspace_path(str(arguments.get("path", ".")))
-        if not _is_within_workspace(path):
+
+        # Sensitive files are always protected, even in dangerous mode.
+        sensitive_denied = _check_sensitive_path(tool.name, path)
+        if sensitive_denied:
+            return sensitive_denied
+
+        # Workspace boundary — skipped in dangerous mode.
+        if config.permission_mode != "dangerous" and not _is_within_workspace(path):
             return (
                 f"Permission denied: '{tool.name}' cannot access '{path}' "
                 f"outside workspace '{_workspace_root()}'"
