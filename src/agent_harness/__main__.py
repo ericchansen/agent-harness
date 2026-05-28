@@ -2,7 +2,7 @@
 
 import sys
 
-from agent_harness.agent import main
+from agent_harness._runtime.cli import main
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -14,8 +14,8 @@ Minimal AI agent harness for live demos. Shows how tools like Claude Code and Gi
 ## Setup
 
 ```bash
-# Prerequisites: Python 3.11+, Azure CLI logged in (az login)
-pip install -e .
+# Prerequisites: Python 3.11+, uv, Azure CLI logged in (az login)
+uv sync --dev
 
 # Copy the example config and set your endpoint
 cp config.example.json config.json
@@ -24,8 +24,8 @@ cp config.example.json config.json
 Or rehearse locally without Azure:
 
 ```bash
-python -m agent_harness --mock --preflight
-python -m agent_harness --mock --prompt "What files are in the current directory?"
+uv run python -m agent_harness --mock --preflight
+uv run python -m agent_harness --mock --prompt "What files are in the current directory?"
 ```
 
 Edit `config.json` and set `azure_endpoint` to your Azure AI Services endpoint:
@@ -61,16 +61,16 @@ This creates an AI Services resource with a `gpt-4o` deployment and grants you d
 
 ```bash
 # Show the current local setup
-python -m agent_harness --preflight
+uv run python -m agent_harness --preflight
 
 # Interactive REPL
-python -m agent_harness
+uv run python -m agent_harness
 
 # One-shot prompt
-python -m agent_harness --prompt "What files are in the current directory?"
+uv run python -m agent_harness --prompt "What files are in the current directory?"
 
 # Deterministic rehearsal mode (no Azure call)
-python -m agent_harness --mock --prompt "What files are in the current directory?"
+uv run python -m agent_harness --mock --prompt "What files are in the current directory?"
 ```
 
 `--preflight` checks local config, tool loading, skills, and MCP availability. It does **not** verify live Azure connectivity or deployment health.
