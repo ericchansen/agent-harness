@@ -14,6 +14,7 @@ dependencies = [
     { name = "azure-identity" },
     { name = "mcp" },
     { name = "openai" },
+    { name = "python-dotenv" },
 ]
 
 [package.optional-dependencies]
@@ -35,6 +36,7 @@ requires-dist = [
     { name = "openai", specifier = ">=1.0.0" },
     { name = "pre-commit", marker = "extra == 'dev'" },
     { name = "pytest", marker = "extra == 'dev'" },
+    { name = "python-dotenv", specifier = ">=1.0.0" },
 ]
 provides-extras = ["dev"]
 

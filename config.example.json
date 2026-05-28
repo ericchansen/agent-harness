@@ -1,5 +1,4 @@
 {
-  "azure_endpoint": "",
   "azure_deployment": "gpt-4o",
   "azure_api_version": "2025-01-01-preview",
   "permission_mode": "workspace_write",

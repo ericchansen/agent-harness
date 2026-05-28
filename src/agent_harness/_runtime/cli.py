@@ -66,7 +66,7 @@ def _format_runtime_error(exc: Exception, config: Config) -> str:
         return (
             "Connection error: could not resolve the Azure endpoint host "
             f"'{host}'.\n"
-            "Check 'azure_endpoint' in config.json (or AZURE_ENDPOINT), and verify with:\n"
+            "Check AZURE_ENDPOINT in your .env file (or shell), and verify with:\n"
             f"  nslookup {host}"
         )
 
