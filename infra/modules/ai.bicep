@@ -49,6 +49,23 @@ resource gpt4o 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
   }
 }
 
+resource o4mini 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
+  parent: aiServices
+  name: 'o4-mini'
+  dependsOn: [gpt4o]
+  sku: {
+    name: 'GlobalStandard'
+    capacity: 10
+  }
+  properties: {
+    model: {
+      format: 'OpenAI'
+      name: 'o4-mini'
+      version: '2025-04-16'
+    }
+  }
+}
+
 resource roleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(deployerPrincipalId)) {
   scope: aiServices
   name: guid(aiServices.id, deployerPrincipalId, cognitiveServicesOpenAIUserRole)

@@ -11,22 +11,42 @@ from openai import AzureOpenAI
 from agent_harness.agent import ResponseFn, agent_turn
 from agent_harness.models import Config
 
-from .api import call_model, make_client
+from .api import (
+    StreamResult,
+    _is_reasoning_model,
+    call_model_streaming,
+    call_responses_streaming,
+    consume_responses_stream,
+    consume_stream,
+    make_client,
+)
 from .config import client_signature, load_config
 from .mock import mock_response
 from .preflight import run_preflight
 
 
 def _azure_provider(client: AzureOpenAI) -> ResponseFn:
-    """Bind an Azure client into a ResponseFn."""
+    """Bind an Azure client into a streaming ResponseFn.
+
+    Routes reasoning-capable models to the Responses API (so reasoning
+    summaries can stream) and everything else to Chat Completions.
+    """
 
     def provider(
         messages: list[dict[str, Any]],
         tools: Any,
         system_prompt: str,
         config: Config,
-    ) -> Any:
-        return call_model(client, messages, tools, system_prompt, config)
+    ) -> StreamResult:
+        if _is_reasoning_model(config.azure_deployment):
+            stream = call_responses_streaming(
+                client, messages, tools, system_prompt, config
+            )
+            return consume_responses_stream(
+                stream, show_tool_calls=config.show_tool_calls
+            )
+        stream = call_model_streaming(client, messages, tools, system_prompt, config)
+        return consume_stream(stream, show_tool_calls=config.show_tool_calls)
 
     return provider
 
@@ -39,8 +59,26 @@ def _mock_provider() -> ResponseFn:
         tools: Any,
         system_prompt: str,  # noqa: ARG001
         config: Config,  # noqa: ARG001
-    ) -> Any:
-        return mock_response(messages, tools)
+    ) -> StreamResult:
+        mock = mock_response(messages, tools)
+        msg = mock.choices[0].message
+        from .api import StreamedToolCall
+
+        tool_calls = []
+        if msg.tool_calls:
+            for tc in msg.tool_calls:
+                tool_calls.append(
+                    StreamedToolCall(
+                        id=tc.id,
+                        name=tc.function.name,
+                        arguments=tc.function.arguments,
+                    )
+                )
+        result = StreamResult(content=msg.content, tool_calls=tool_calls)
+        # Print content immediately for mock mode (no streaming)
+        if result.content:
+            print(f"\n{result.content}")
+        return result
 
     return provider
 

@@ -6,6 +6,7 @@ import json
 import socket
 
 import agent_harness._runtime.preflight as preflight_module
+from agent_harness._runtime.api import StreamedToolCall, StreamResult
 from agent_harness._runtime.cli import _format_runtime_error
 from agent_harness._runtime.config import load_config
 from agent_harness._runtime.mock import mock_response
@@ -18,7 +19,19 @@ def _mock_provider():
     """Adapt the bare mock_response to the agent's ResponseFn signature."""
 
     def provider(messages, tools, system_prompt, config):  # noqa: ARG001
-        return mock_response(messages, tools)
+        mock = mock_response(messages, tools)
+        msg = mock.choices[0].message
+        tool_calls = []
+        if msg.tool_calls:
+            for tc in msg.tool_calls:
+                tool_calls.append(
+                    StreamedToolCall(
+                        id=tc.id,
+                        name=tc.function.name,
+                        arguments=tc.function.arguments,
+                    )
+                )
+        return StreamResult(content=msg.content, tool_calls=tool_calls)
 
     return provider
 
