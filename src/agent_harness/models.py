@@ -7,6 +7,27 @@ from typing import Any
 
 
 @dataclass
+class Skill:
+    """One skill loaded from ``skills/*.md``.
+
+    Frontmatter format (optional, YAML-like)::
+
+        ---
+        description: short summary shown to the model in <available_skills>
+        ---
+        ## Skill body in markdown...
+
+    Only ``name`` and ``description`` are advertised to the model up-front.
+    The ``body`` is loaded into context only when the model invokes the
+    ``skill`` tool with this skill's name.
+    """
+
+    name: str
+    description: str
+    body: str
+
+
+@dataclass
 class Config:
     """Runtime configuration — loaded from ``config.json`` each turn."""
 
