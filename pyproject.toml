@@ -13,7 +13,7 @@ authors = [{ name = "Eric Hansen" }]
 dependencies = [
     "openai>=1.0.0",
     "azure-identity>=1.15.0",
-    "mcp>=1.0.0",
+    "mcp>=1.28.1",
     "python-dotenv>=1.0.0",
 ]
 
